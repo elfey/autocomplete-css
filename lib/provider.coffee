@@ -1,6 +1,7 @@
 fs = require 'fs'
 path = require 'path'
 
+propertyNameWithoutColonPattern = /^\s*(\S+)\s*/
 propertyNameWithColonPattern = /^\s*(\S+)\s*:/
 propertyNamePrefixPattern = /[a-zA-Z]+[-a-zA-Z]*$/
 pesudoSelectorPrefixPattern = /:(:)?([a-z]+[a-z-]*)?$/
@@ -159,21 +160,22 @@ module.exports =
     line = editor.getTextInRange([[bufferPosition.row, 0], bufferPosition])
     importantPrefixPattern.exec(line)?[1]
 
-  getPreviousPropertyName: (bufferPosition, editor) ->
+  getPreviousPropertyName: (bufferPosition, editor, scopes) ->
     {row} = bufferPosition
     while row >= 0
       line = editor.lineTextForBufferRow(row)
-      propertyName = propertyNameWithColonPattern.exec(line)?[1]
+      pattern = if hasScope(scopes, 'source.css.stylus') then propertyNameWithoutColonPattern else propertyNameWithColonPattern
+      propertyName = pattern.exec(line)?[1]
       return propertyName if propertyName
       row--
     return
 
   getPropertyValueCompletions: ({bufferPosition, editor, prefix, scopeDescriptor}) ->
-    property = @getPreviousPropertyName(bufferPosition, editor)
+    scopes = scopeDescriptor.getScopesArray()
+
+    property = @getPreviousPropertyName(bufferPosition, editor, scopes)
     values = @properties[property]?.values
     return null unless values?
-
-    scopes = scopeDescriptor.getScopesArray()
 
     completions = []
     if @isPropertyValuePrefix(prefix)
@@ -197,7 +199,7 @@ module.exports =
 
   buildPropertyValueCompletion: (value, propertyName, scopes) ->
     text = value
-    text += ';' unless hasScope(scopes, 'source.sass')
+    text += ';' unless hasScope(scopes, 'source.sass') or hasScope(scopes, 'source.css.stylus')
 
     {
       type: 'value'
@@ -222,12 +224,16 @@ module.exports =
 
     completions = []
     for property, options of @properties when not prefix or firstCharsEqual(property, prefix)
-      completions.push(@buildPropertyNameCompletion(property, prefix, options))
+      completions.push(@buildPropertyNameCompletion(property, prefix, options, scopes))
     completions
 
-  buildPropertyNameCompletion: (propertyName, prefix, {description}) ->
+  buildPropertyNameCompletion: (propertyName, prefix, {description}, scopes) ->
+    text = propertyName
+    text += ':' unless hasScope(scopes, 'source.css.stylus')
+    text += ' '
+
     type: 'property'
-    text: "#{propertyName}: "
+    text: text
     displayText: propertyName
     replacementPrefix: prefix
     description: description
